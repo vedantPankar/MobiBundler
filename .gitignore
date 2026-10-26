@@ -32,3 +32,6 @@ database.sqlite
 .claude/settings.local.json
 /prisma/*.bak
 /prisma/.tmp-test/
+
+# Dev-only Shopify payload captures (sanitized, still local)
+/.captures/

@@ -1,0 +1,149 @@
+{
+  "data": {
+    "order": {
+      "id": "gid://shopify/Order/8693648851130",
+      "createdAt": "2026-10-24T17:20:46Z",
+      "cancelledAt": null,
+      "displayFinancialStatus": "PAID",
+      "currencyCode": "USD",
+      "presentmentCurrencyCode": "USD",
+      "discountApplications": {
+        "nodes": [
+          {
+            "__typename": "AutomaticDiscountApplication",
+            "allocationMethod": "ACROSS",
+            "targetSelection": "ENTITLED",
+            "targetType": "LINE_ITEM",
+            "value": {
+              "__typename": "MoneyV2",
+              "amount": "102.5",
+              "currencyCode": "USD"
+            },
+            "title": "Bundle discount"
+          },
+          {
+            "__typename": "AutomaticDiscountApplication",
+            "allocationMethod": "ACROSS",
+            "targetSelection": "ENTITLED",
+            "targetType": "LINE_ITEM",
+            "value": {
+              "__typename": "MoneyV2",
+              "amount": "74.99",
+              "currencyCode": "USD"
+            },
+            "title": "Bundle discount"
+          }
+        ]
+      },
+      "lineItems": {
+        "nodes": [
+          {
+            "id": "gid://shopify/LineItem/17097079324858",
+            "title": "The Collection Snowboard: Oxygen",
+            "quantity": 1,
+            "currentQuantity": 1,
+            "variant": {
+              "id": "gid://shopify/ProductVariant/50798419411130"
+            },
+            "product": {
+              "id": "gid://shopify/Product/10393926959290"
+            },
+            "customAttributes": [
+              {
+                "key": "_mobi_bundle",
+                "value": "cmvi8ulin00008o6efg7fzwk2"
+              }
+            ],
+            "originalUnitPriceSet": {
+              "shopMoney": {
+                "amount": "1025.0",
+                "currencyCode": "USD"
+              },
+              "presentmentMoney": {
+                "amount": "1025.0",
+                "currencyCode": "USD"
+              }
+            },
+            "discountedUnitPriceSet": {
+              "shopMoney": {
+                "amount": "1025.0"
+              },
+              "presentmentMoney": {
+                "amount": "1025.0"
+              }
+            },
+            "discountAllocations": [
+              {
+                "allocatedAmountSet": {
+                  "shopMoney": {
+                    "amount": "102.5"
+                  },
+                  "presentmentMoney": {
+                    "amount": "102.5"
+                  }
+                },
+                "discountApplication": {
+                  "__typename": "AutomaticDiscountApplication",
+                  "title": "Bundle discount"
+                }
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/LineItem/17097079357626",
+            "title": "The Collection Snowboard: Liquid",
+            "quantity": 1,
+            "currentQuantity": 1,
+            "variant": {
+              "id": "gid://shopify/ProductVariant/50798419509434"
+            },
+            "product": {
+              "id": "gid://shopify/Product/10393927057594"
+            },
+            "customAttributes": [
+              {
+                "key": "_mobi_bundle",
+                "value": "cmvi8ulin00008o6efg7fzwk2"
+              }
+            ],
+            "originalUnitPriceSet": {
+              "shopMoney": {
+                "amount": "749.95",
+                "currencyCode": "USD"
+              },
+              "presentmentMoney": {
+                "amount": "749.95",
+                "currencyCode": "USD"
+              }
+            },
+            "discountedUnitPriceSet": {
+              "shopMoney": {
+                "amount": "749.95"
+              },
+              "presentmentMoney": {
+                "amount": "749.95"
+              }
+            },
+            "discountAllocations": [
+              {
+                "allocatedAmountSet": {
+                  "shopMoney": {
+                    "amount": "74.99"
+                  },
+                  "presentmentMoney": {
+                    "amount": "74.99"
+                  }
+                },
+                "discountApplication": {
+                  "__typename": "AutomaticDiscountApplication",
+                  "title": "Bundle discount"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "refunds": []
+    }
+  }
+}

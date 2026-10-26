@@ -1,0 +1,29 @@
+query CartInput {
+  presentmentCurrencyRate
+  cart {
+    lines {
+      id
+      quantity
+      cost {
+        amountPerQuantity {
+          amount
+          currencyCode
+        }
+      }
+      merchandise {
+        __typename
+        ... on ProductVariant {
+          id
+        }
+      }
+    }
+  }
+  discount {
+    discountClasses
+    # Namespace form taken from the docs' discount example; must equal app/bundles/config.ts CONFIG_NAMESPACE.
+    # UNVERIFIED live (spec S2).
+    metafield(namespace: "$app:bundler", key: "function-configuration") {
+      jsonValue
+    }
+  }
+}

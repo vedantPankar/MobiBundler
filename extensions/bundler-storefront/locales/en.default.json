@@ -1,10 +1,14 @@
 {
-  "ratings": {
-    "stars": {
-      "label": "Ratings"
-    },
-    "home": {
-      "recommendationText": "Recommended Product!"
-    }
+  "bundle": {
+    "region_label": "Bundle offer",
+    "loading": "Loading bundle…",
+    "add_to_cart": "Add bundle to cart",
+    "adding": "Adding…",
+    "sold_out": "One or more products in this bundle are sold out.",
+    "out_of_stock": "Out of stock",
+    "error": "This bundle is unavailable right now. Please try again.",
+    "savings": "You save",
+    "no_bundle": "No active bundle includes this product.",
+    "no_target": "Open a product page, or paste a Bundle ID, to preview this block."
   }
 }

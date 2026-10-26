@@ -1,0 +1,49 @@
+{% comment %}
+  MobiBundler bundle block. Everything shown here is informational: the discount is applied at checkout
+  by the bundle Shopify Function, never from values on this page.
+{% endcomment %}
+{{ 'bundle.css' | asset_url | stylesheet_tag }}
+<div
+  class="mobi-bundle"
+  data-bundle-id="{{ block.settings.bundle_id | strip | escape }}"
+  data-product-id="{{ product.id }}"
+  data-proxy="/apps/mobi-bundler"
+  data-locale="{{ request.locale.iso_code }}"
+  data-label-add="{{ 'bundle.add_to_cart' | t | escape }}"
+  data-label-adding="{{ 'bundle.adding' | t | escape }}"
+  data-label-loading="{{ 'bundle.loading' | t | escape }}"
+  data-label-sold-out="{{ 'bundle.sold_out' | t | escape }}"
+  data-label-error="{{ 'bundle.error' | t | escape }}"
+  data-label-no-bundle="{{ 'bundle.no_bundle' | t | escape }}"
+  data-label-no-target="{{ 'bundle.no_target' | t | escape }}"
+  data-label-savings="{{ 'bundle.savings' | t | escape }}"
+  data-label-out-of-stock="{{ 'bundle.out_of_stock' | t | escape }}"
+  style="--mobi-accent: {{ block.settings.accent }};"
+  role="region"
+  aria-label="{{ 'bundle.region_label' | t | escape }}"
+  {{ block.shopify_attributes }}
+>
+  <p class="mobi-bundle__status" role="status">{{ 'bundle.loading' | t }}</p>
+</div>
+<script src="{{ 'bundle.js' | asset_url }}" defer></script>
+
+{% schema %}
+{
+  "name": "Bundle",
+  "target": "section",
+  "settings": [
+    {
+      "type": "text",
+      "id": "bundle_id",
+      "label": "Bundle ID (optional)",
+      "info": "Leave empty to automatically show the active bundle that contains the product being viewed. Paste an ID from the MobiBundler app to always show one specific bundle."
+    },
+    {
+      "type": "color",
+      "id": "accent",
+      "label": "Accent color",
+      "default": "#02736a"
+    }
+  ]
+}
+{% endschema %}

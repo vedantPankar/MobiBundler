@@ -2,6 +2,7 @@ import { Outlet, useLoaderData, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { authenticate } from "../shopify.server";
+import { BRAND_CSS } from "../bundles/brand";
 
 export const loader = async ({ request }) => {
   await authenticate.admin(request);
@@ -15,9 +16,13 @@ export default function App() {
 
   return (
     <AppProvider embedded apiKey={apiKey}>
+      {/* Static constant: a <style> block is raw text and must not go through React's escaping. */}
+      <style dangerouslySetInnerHTML={{ __html: BRAND_CSS }} />
       <s-app-nav>
-        <s-link href="/app">Home</s-link>
-        <s-link href="/app/additional">Additional page</s-link>
+        <s-link href="/app">Dashboard</s-link>
+        <s-link href="/app/bundles">Bundles</s-link>
+        <s-link href="/app/analytics">Analytics</s-link>
+        <s-link href="/app/diagnostics">Diagnostics</s-link>
       </s-app-nav>
       <Outlet />
     </AppProvider>

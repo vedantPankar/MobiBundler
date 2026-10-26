@@ -14,21 +14,135 @@ datasource db {
 }
 
 model Session {
-  id            String    @id
-  shop          String
-  state         String
-  isOnline      Boolean   @default(false)
-  scope         String?
-  expires       DateTime?
-  accessToken   String
-  userId        BigInt?
-  firstName     String?
-  lastName      String?
-  email         String?
-  accountOwner  Boolean   @default(false)
-  locale        String?
-  collaborator  Boolean?  @default(false)
-  emailVerified Boolean?  @default(false)
+  id                  String    @id
+  shop                String
+  state               String
+  isOnline            Boolean   @default(false)
+  scope               String?
+  expires             DateTime?
+  accessToken         String
+  userId              BigInt?
+  firstName           String?
+  lastName            String?
+  email               String?
+  accountOwner        Boolean   @default(false)
+  locale              String?
+  collaborator        Boolean?  @default(false)
+  emailVerified       Boolean?  @default(false)
   refreshToken        String?
   refreshTokenExpires DateTime?
+}
+
+model Bundle {
+  id           String       @id @default(cuid())
+  shop         String
+  name         String
+  description  String?
+  type         String       @default("fixed")
+  status       String       @default("draft")
+  pricingKind  String
+  pricingValue Int
+  currencyCode String
+  buttonLabel  String?
+  showSavings  Boolean      @default(true)
+  syncStatus   String       @default("pending")
+  syncError    String?
+  version      Int          @default(1)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  items        BundleItem[]
+
+  @@unique([shop, name])
+  @@index([shop, status])
+  @@index([shop, updatedAt])
+}
+
+model BundleItem {
+  id        String @id @default(cuid())
+  bundleId  String
+  shop      String
+  productId String
+  variantId String
+  quantity  Int    @default(1)
+  position  Int    @default(0)
+  bundle    Bundle @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+
+  @@unique([bundleId, variantId])
+  @@index([shop, variantId])
+}
+
+model BundleEvent {
+  id        String   @id @default(cuid())
+  shop      String
+  bundleId  String
+  type      String
+  dedupeKey String
+  createdAt DateTime @default(now())
+
+  @@unique([shop, dedupeKey])
+  @@index([shop, bundleId, type, createdAt])
+}
+
+model ShopDiscount {
+  shop              String    @id
+  shopifyDiscountId String?
+  configHash        String?
+  syncedAt          DateTime?
+}
+
+// Revenue tracking. One OrderRecord per Shopify order (frozen attribution + latest lines/refunds) and one
+// BundleOrderRevenue per order x bundle (derived, replaced wholesale on every change). No customer data is stored.
+model OrderRecord {
+  id                  String    @id @default(cuid())
+  shop                String
+  orderId             String
+  orderName           String?
+  orderedAt           DateTime
+  cancelledAt         DateTime?
+  currencyCode        String
+  source              String
+  fingerprint         String
+  linesHash           String
+  linesJson           String
+  refundsJson         String
+  attributionJson     String
+  reconciled          Boolean
+  reconcileNote       String?
+  unmappedRefundMinor Int       @default(0)
+  syncedAt            DateTime  @updatedAt
+
+  @@unique([shop, orderId])
+  @@index([shop, orderedAt])
+}
+
+model BundleOrderRevenue {
+  id                String   @id @default(cuid())
+  shop              String
+  orderId           String
+  bundleId          String
+  orderedAt         DateTime
+  source            String
+  currencyCode      String
+  cancelled         Boolean  @default(false)
+  reconciled        Boolean
+  sets              Int
+  unitsSold         Int
+  unitsRefunded     Int
+  soldGrossMinor    Int
+  soldDiscountMinor Int
+  netMinor          Int
+
+  @@unique([shop, orderId, bundleId])
+  @@index([shop, orderedAt])
+  @@index([shop, bundleId, orderedAt])
+}
+
+model RevenueSyncState {
+  shop               String    @id
+  trackingStartedAt  DateTime
+  lastSyncedAt       DateTime?
+  lastOrderUpdatedAt DateTime?
+  lastError          String?
+  lastErrorAt        DateTime?
+  lastErrorCode      String?
 }

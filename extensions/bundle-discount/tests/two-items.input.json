@@ -1,0 +1,13 @@
+{
+  "presentmentCurrencyRate": "1.0",
+  "cart": {
+    "lines": [
+      { "id": "gid://shopify/CartLine/1", "quantity": 1, "cost": { "amountPerQuantity": { "amount": "20.00", "currencyCode": "USD" } }, "merchandise": { "__typename": "ProductVariant", "id": "gid://shopify/ProductVariant/1" } },
+      { "id": "gid://shopify/CartLine/2", "quantity": 1, "cost": { "amountPerQuantity": { "amount": "10.00", "currencyCode": "USD" } }, "merchandise": { "__typename": "ProductVariant", "id": "gid://shopify/ProductVariant/2" } }
+    ]
+  },
+  "discount": {
+    "discountClasses": ["PRODUCT"],
+    "metafield": { "jsonValue": { "v": 1, "bundles": [ { "id": "b1", "pricing": { "kind": "percentage", "basisPoints": 1000 }, "items": [ { "variantId": "gid://shopify/ProductVariant/1", "quantity": 1 }, { "variantId": "gid://shopify/ProductVariant/2", "quantity": 1 } ] } ] } }
+  }
+}

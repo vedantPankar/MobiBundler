@@ -1,237 +1,193 @@
-# Shopify App Template - React Router
+# MobiBundler
 
-This is a template for building a [Shopify app](https://shopify.dev/docs/apps/getting-started) using [React Router](https://reactrouter.com/). It was forked from the [Shopify Remix app template](https://github.com/Shopify/shopify-app-template-remix) and converted to React Router.
+Embedded Shopify app for **fixed-product bundles** with a percentage or fixed-amount-off discount.
+React Router 7 + Prisma on the Shopify CLI app template, a theme app extension (`bundler-storefront`) and a
+Shopify Function (`bundle-discount`).
 
-Rather than cloning this repo, follow the [Quick Start steps](https://github.com/Shopify/shopify-app-template-react-router#quick-start).
+> **Status: v1 implemented locally and tested offline. It has never been run against a Shopify store.**
+> Everything that depends on live Shopify behavior is listed under [Unverified behavior](#unverified-behavior)
+> and must be checked with [docs/manual-test-checklist.md](docs/manual-test-checklist.md) before release.
+> Nothing has been deployed or published.
 
-Visit the [`shopify.dev` documentation](https://shopify.dev/docs/api/shopify-app-react-router) for more details on the React Router app package.
+## How it works
 
-## Upgrading from Remix
+1. A merchant creates a bundle in the admin (`/app/bundles/new`): 2–10 product variants (quantity 1–99 each), a
+   percentage or fixed-amount discount, and optional storefront display settings. The server re-fetches every
+   variant from the Admin API and rejects anything it cannot find.
+2. Bundles live in the app database (source of truth). On activate/pause/archive/save, `app/bundles/sync.server.ts`
+   writes **one shared automatic app discount per shop** whose metafield carries every active bundle
+   (`{ v: 1, bundles: [...] }`). The write is skipped when the config hash is unchanged.
+3. The `bundler-storefront` block fetches display data through the app proxy (`/apps/mobi-bundler/bundles`) and
+   adds every component to the cart with `/cart/add.js`. It never sends a price.
+4. At checkout the `bundle-discount` Function runs `allocate()` (`extensions/bundle-discount/src/engine.ts`) over
+   the cart and the saved config. Eligibility comes from variant ids and quantities only; line properties, client
+   prices and submitted bundle ids are ignored. A shopper who assembles the same variants by hand gets the same
+   discount (a bundle is a composition).
 
-If you have an existing Remix app that you want to upgrade to React Router, please follow the [upgrade guide](https://github.com/Shopify/shopify-app-template-react-router/wiki/Upgrading-from-Remix). Otherwise, please follow the quick start guide below.
+Engine rules: units are pooled per variant across lines; a bundle needs all its components in sufficient
+quantity (partial bundles get nothing); `sets = min(floor(available / required))`; extra units stay full price;
+overlapping bundles are resolved deterministically (highest saving per set first, then id) and no unit is
+discounted twice; fixed amounts are clamped to the subtotal and distributed with largest-remainder rounding; unknown
+pricing kinds and invalid entries are skipped rather than failing checkout.
 
-## Quick start
+## Prerequisites
 
-### Prerequisites
+- Node `>=20.19 <22` or `>=22.12`, npm
+- [Shopify CLI](https://shopify.dev/docs/apps/tools/cli) 3.x and a Shopify Partners/Dev Dashboard account
+- A **development store** you own (OS 2.0 theme) for manual verification
+- No Rust toolchain is needed (the Function is TypeScript)
 
-Before you begin, you'll need to [download and install the Shopify CLI](https://shopify.dev/docs/apps/tools/cli/getting-started) if you haven't already.
+## Local setup
 
-### Setup
-
-```shell
-shopify app init --template=https://github.com/Shopify/shopify-app-template-react-router
+```bash
+npm install
+npx prisma generate
+npx prisma migrate deploy      # applies prisma/migrations to prisma/dev.sqlite (additive; keeps Session data)
 ```
 
-### Local Development
+Never run `prisma migrate reset` or `db push --force-reset`: they delete the `Session` table's data.
+Back up first if unsure: `cp prisma/dev.sqlite prisma/dev.sqlite.bak` (git-ignored).
 
-```shell
-shopify app dev
+Environment: `shopify app dev` supplies `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SCOPES` and `SHOPIFY_APP_URL`
+when it runs. Do not create or commit a `.env` with real values (`.env*` is git-ignored).
+
+## Commands
+
+| Task | Command |
+|---|---|
+| Unit/integration tests (offline) | `npm test` |
+| Type check | `npm run typecheck` |
+| Lint | `npm run lint` |
+| Production build | `npm run build` |
+| Validate Prisma schemas | `npx prisma validate` and `DATABASE_URL=postgresql://x npx prisma validate --schema prisma/postgres/schema.prisma` |
+| Validate app config | `npx shopify app config validate` |
+| Build the Function | `cd extensions/bundle-discount && npm run build` |
+| Run the Function on a fixture | `cd extensions/bundle-discount && npm exec shopify app function run -- --input tests/two-items.input.json --export cart-lines-discounts-generate-run` |
+| Theme extension lint | `npx shopify theme check --path extensions/bundler-storefront` |
+| Dev server (needs a dev store; **modifies the dev store's app install**) | `npm run dev` |
+
+Do **not** run `npm run deploy` / `shopify app deploy` until the checklist passes and you have decided on
+[distribution](docs/deployment.md#distribution).
+
+## Tests
+
+`npm test` runs Vitest. DB tests use a throwaway SQLite database built from the real migrations
+(`prisma/.tmp-test/`, git-ignored) and never touch `prisma/dev.sqlite`; test files run serially because they share it.
+Shopify calls are replaced with fakes, so these tests prove our logic, **not** live Shopify behavior.
+Coverage: engine (percentage/fixed, partial bundles, duplicates, quantities, overlap, determinism, invalid config),
+Function adapter and config parsing, validation, repository isolation, sync (idempotency, retry, concurrency),
+save/variant re-verification, webhook handlers and routes (mocked `authenticate.webhook`), events, public bundle
+data, rate limiting, storefront cart payload, diagnostics, and SQLite/PostgreSQL schema parity.
+
+## Required API scopes
+
+`read_products,write_discounts,write_app_proxy` (set in `shopify.app.toml`).
+
+- `read_products`: search products and re-verify variants when saving, and read live titles/prices/stock.
+- `write_discounts`: create/update/activate/deactivate the shared automatic app discount.
+- `write_app_proxy`: the app-proxy docs state "Configuring an app proxy requires the `write_app_proxy` access scope"
+  (`shopify.dev/docs/apps/build/online-store/app-proxies`), so it is requested for the `[app_proxy]` block.
+- Not requested: `read_orders` (no purchase or revenue analytics), `write_products`.
+- Changing scopes takes effect only after a deploy and merchant re-approval; nothing has been deployed.
+
+## Database
+
+Local development uses SQLite (`prisma/schema.prisma`, `prisma/dev.sqlite`). Models: `Session` (template, untouched),
+`Bundle`, `BundleItem`, `BundleEvent`, `ShopDiscount`. Every table except `Session` carries `shop`; all bundle-table
+queries live in `app/bundles/repo.server.ts` (enforced by `tests/noDirectPrisma.test.ts`) and take `shop` first.
+Money is stored as integers (percentage as basis points, fixed amounts in minor units of the shop currency).
+
+SQLite is **not** supported in production (single file, single instance, no concurrent writers). Production uses
+PostgreSQL via the generated `prisma/postgres/schema.prisma` (only the `datasource` differs; a test fails if the
+models diverge) and the baseline in `prisma/postgres/migrations/0001_baseline`. Regenerate with
+`node scripts/gen-postgres-schema.mjs`. After changing the SQLite schema, add a matching PostgreSQL migration:
+`DATABASE_URL=… npx prisma migrate diff --from-migrations prisma/postgres/migrations --to-schema-datamodel prisma/postgres/schema.prisma --shadow-database-url …`.
+The PostgreSQL baseline and `migrate deploy` have **not** been run against a real PostgreSQL server.
+Details: [docs/deployment.md](docs/deployment.md).
+
+## Known platform restrictions
+
+- Function-based discounts: at most **25 active function discounts per store across all apps** (docs). The design
+  uses one, and caps active bundles at 20 (see below).
+- Custom-distribution apps can only use Functions on **Shopify Plus** stores; non-Plus stores need a public
+  (App Store) app. Distribution cannot be changed after it is chosen.
+- Function limits (docs): input ≤ 128 KB, output ≤ 20 KB, 11M instructions. Local `function run` measurements
+  (TypeScript): 20 matching bundles cost ≈ 4.4M instructions at 10 cart lines, ≈ 7.0M at 30 lines and ≈ 19M at
+  200 lines. Large carts can exceed the limit; a Rust implementation would be the mitigation. Each cart line costs
+  ≈ 40K instructions on its own.
+- Online Store 2.0 themes only. Headless storefronts are out of scope.
+- Metafield value ≤ 256 KB; v1 enforces 64 KB and ≤ 20 active bundles, ≤ 10 components per bundle.
+- The app proxy rate limiter is in-memory (per process).
+
+## Dashboard sections, Orders, Suggestions and Analytics
+
+- **Dashboard** also shows the newest 5 bundle orders and the top 3 suggested bundles (suggestions stream in after the page
+  loads). Navigation is Dashboard, Bundles, Analytics, Diagnostics.
+- **Orders** (`/app/orders`, opened from "View all"): every synced bundle order with its number, bundle, gross, discount,
+  refunded amount, net revenue, live/historical, and an "Estimate" flag with the reason. Read-only.
+- **Suggestions** (`/app/suggestions`): product pairs that were bought together in the last 60 days (newest 250 orders),
+  minus pairs already in a live bundle, each with a "Create this bundle" link that opens a prefilled **draft**. It reads
+  only which variants shared an order (no customer, price or address fields), describes past orders, and never forecasts.
+- **Analytics** (`/app/analytics`): views, add-to-cart, orders, net revenue, discount and refund rates, a per-bundle funnel and
+  a revenue-per-day chart. Storefront counts do not need order access; revenue figures say "unavailable" when it fails.
+  Days are UTC; rates show "—" when there is nothing to divide by.
+  Orders, Suggestions and revenue need the same order access. Status: [docs/acceptance-checklist.md](docs/acceptance-checklist.md), sections 10 and 11.
+
+## Brand
+
+Colours come from the logo; see [docs/brand/README.md](docs/brand/README.md) (palette, what is and is not branded, and the
+app-icon upload step). Tokens: `app/bundles/brand.ts`.
+
+## Unverified behavior
+
+None of the following has been exercised against Shopify. Do not treat the integration as working until the
+manual checklist is complete.
+
+1. **Metafield namespace `$app:bundler`.** The app writes `{namespace: "$app:bundler", key: "function-configuration",
+   type: "json"}` on `discountAutomaticAppCreate/Update` and the Function reads the same pair. This follows the docs'
+   "Metafields for input queries" page, whose discount example uses `$app:my-function` for both the write and the read;
+   the docs do not explain how `$app` resolves, and the Admin API reference examples use `default`. Whether it
+   resolves identically for write and read is unconfirmed. The constant is `CONFIG_NAMESPACE` in
+   `app/bundles/config.ts`; the Function's `.graphql` must carry the same string (`tests/namespaceSync.test.ts`
+   guards this). Fallbacks to try if it fails: bare `$app`, or the explicit `app--<app-id>` namespace.
+1a. **Revenue tracking (whole feature).** Implemented locally; checked against one real order (#1001, full bundle, no refund) after selecting
+   protected customer data use for the dev store. Still unverified: refund-to-line mapping, cancellations, order edits,
+   other currencies, webhook payloads, and every remaining question in [docs/revenue-validation-checklist.md](docs/revenue-validation-checklist.md) are unverified. See
+   [docs/revenue-tracking.md](docs/revenue-tracking.md). Acceptance status of every feature:
+   [docs/acceptance-checklist.md](docs/acceptance-checklist.md).
+2. **Discount capacity.** Whether the shared discount counts as exactly one of the 25 slots, and the actual error at
+   the limit.
+3. **Stacking.** `combinesWith` is set to products=false, orders=false, shipping=true. Docs (`DiscountCombinesWith`):
+   "By default, only one product discount applies per line"; applying several product discounts to one line needs a
+   Plus plan and matching tags (`productDiscountsWithTagsOnSameCartLine`), which this app does not use. So another
+   product discount on a bundle line will not stack with ours; which one wins is not stated and is untested. Discount
+   functions run concurrently and do not see each other.
+4. **`write_app_proxy`.** Requested because the docs require it; whether the CLI/deploy flow accepts it as configured
+   is unverified.
+5. **Admin GraphQL shapes.** All strings validate against the 2026-07 schema (toolkit validator), but schema validity
+   is not runtime proof (e.g. accepted `metafields` input, `discountNode.metafield` read-back, update semantics).
+6. **Function runtime.** Built and run locally against fixtures only. The wasm has never run in checkout.
+7. **Webhook HMAC verification** is done by `@shopify/shopify-app-react-router`; our tests mock it.
+8. **Distribution type** of the existing app (`client_id` in `shopify.app.toml`) is unknown.
+9. **Theme block** rendering in the theme editor and storefront, and `/cart/add.js` behavior, are unverified;
+   `shopify theme check` reports no offenses.
+10. **Currency/Markets.** Fixed amounts are converted with `presentmentCurrencyRate`; untested live.
+11. **PostgreSQL** migration application is unverified.
+
+## Not implemented (by design)
+
+Purchase/revenue/conversion analytics (no `read_orders`), fixed-price bundles, mix-and-match, volume tiers, BXGY,
+scheduling, billing, App Store listing. The engine dispatches on `pricing.kind` and the config version so these can
+be added without rewriting the core.
+
+## Project layout
+
 ```
-
-Press P to open the URL to your app. Once you click install, you can start development.
-
-Local development is powered by [the Shopify CLI](https://shopify.dev/docs/apps/tools/cli). It logs into your account, connects to an app, provides environment variables, updates remote config, creates a tunnel and provides commands to generate extensions.
-
-### Authenticating and querying data
-
-To authenticate and query data you can use the `shopify` const that is exported from `/app/shopify.server.js`:
-
-```js
-export async function loader({ request }) {
-  const { admin } = await shopify.authenticate.admin(request);
-
-  const response = await admin.graphql(`
-    {
-      products(first: 25) {
-        nodes {
-          title
-          description
-        }
-      }
-    }`);
-
-  const {
-    data: {
-      products: { nodes },
-    },
-  } = await response.json();
-
-  return nodes;
-}
+app/bundles/            domain: validation, repo, sync, Admin wrappers, engine adapters, diagnostics
+app/routes/             admin UI, app proxy (app_proxy.*), webhooks.*
+extensions/bundle-discount/     Shopify Function (TypeScript) + pure engine.ts
+extensions/bundler-storefront/  theme app extension (blocks/bundle.liquid, assets/bundle.{js,css})
+prisma/                 SQLite schema + migrations; postgres/ generated schema + baseline
+tests/                  Vitest suites
+docs/                   design spec, plan, deployment notes, manual test checklist
 ```
-
-This template comes pre-configured with examples of:
-
-1. Setting up your Shopify app in [/app/shopify.server.ts](https://github.com/Shopify/shopify-app-template-react-router/blob/main/app/shopify.server.ts)
-2. Querying data using Graphql. Please see: [/app/routes/app.\_index.tsx](https://github.com/Shopify/shopify-app-template-react-router/blob/main/app/routes/app._index.tsx).
-3. Responding to webhooks. Please see [/app/routes/webhooks.tsx](https://github.com/Shopify/shopify-app-template-react-router/blob/main/app/routes/webhooks.app.uninstalled.tsx).
-4. Using metafields, metaobjects, and declarative custom data definitions. Please see [/app/routes/app.\_index.tsx](https://github.com/Shopify/shopify-app-template-react-router/blob/main/app/routes/app._index.tsx) and [shopify.app.toml](https://github.com/Shopify/shopify-app-template-react-router/blob/main/shopify.app.toml).
-
-Please read the [documentation for @shopify/shopify-app-react-router](https://shopify.dev/docs/api/shopify-app-react-router) to see what other API's are available.
-
-## Shopify Dev MCP
-
-This template is configured with the Shopify Dev MCP. This instructs [Cursor](https://cursor.com/), [GitHub Copilot](https://github.com/features/copilot) and [Claude Code](https://claude.com/product/claude-code) and [Google Gemini CLI](https://github.com/google-gemini/gemini-cli) to use the Shopify Dev MCP.
-
-For more information on the Shopify Dev MCP please read [the documentation](https://shopify.dev/docs/apps/build/devmcp).
-
-## Deployment
-
-### Application Storage
-
-This template uses [Prisma](https://www.prisma.io/) to store session data, by default using an [SQLite](https://www.sqlite.org/index.html) database.
-The database is defined as a Prisma schema in `prisma/schema.prisma`.
-
-This use of SQLite works in production if your app runs as a single instance.
-The database that works best for you depends on the data your app needs and how it is queried.
-Here’s a short list of databases providers that provide a free tier to get started:
-
-| Database   | Type             | Hosters                                                                                                                                                                                                                                    |
-| ---------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| MySQL      | SQL              | [Digital Ocean](https://www.digitalocean.com/products/managed-databases-mysql), [Planet Scale](https://planetscale.com/), [Amazon Aurora](https://aws.amazon.com/rds/aurora/), [Google Cloud SQL](https://cloud.google.com/sql/docs/mysql) |
-| PostgreSQL | SQL              | [Digital Ocean](https://www.digitalocean.com/products/managed-databases-postgresql), [Amazon Aurora](https://aws.amazon.com/rds/aurora/), [Google Cloud SQL](https://cloud.google.com/sql/docs/postgres)                                   |
-| Redis      | Key-value        | [Digital Ocean](https://www.digitalocean.com/products/managed-databases-redis), [Amazon MemoryDB](https://aws.amazon.com/memorydb/)                                                                                                        |
-| MongoDB    | NoSQL / Document | [Digital Ocean](https://www.digitalocean.com/products/managed-databases-mongodb), [MongoDB Atlas](https://www.mongodb.com/atlas/database)                                                                                                  |
-
-To use one of these, you can use a different [datasource provider](https://www.prisma.io/docs/reference/api-reference/prisma-schema-reference#datasource) in your `schema.prisma` file, or a different [SessionStorage adapter package](https://github.com/Shopify/shopify-api-js/blob/main/packages/shopify-api/docs/guides/session-storage.md).
-
-### Build
-
-Build the app by running the command below with the package manager of your choice:
-
-Using yarn:
-
-```shell
-yarn build
-```
-
-Using npm:
-
-```shell
-npm run build
-```
-
-Using pnpm:
-
-```shell
-pnpm run build
-```
-
-## Hosting
-
-When you're ready to set up your app in production, you can follow [our deployment documentation](https://shopify.dev/docs/apps/launch/deployment) to host it externally. From there, you have a few options:
-
-- [Google Cloud Run](https://shopify.dev/docs/apps/launch/deployment/deploy-to-google-cloud-run): This tutorial is written specifically for this example repo, and is compatible with the extended steps included in the subsequent [**Build your app**](tutorial) in the **Getting started** docs. It is the most detailed tutorial for taking a React Router-based Shopify app and deploying it to production. It includes configuring permissions and secrets, setting up a production database, and even hosting your apps behind a load balancer across multiple regions.
-- [Fly.io](https://fly.io/docs/js/shopify/): Leverages the Fly.io CLI to quickly launch Shopify apps to a single machine.
-- [Render](https://render.com/docs/deploy-shopify-app): This tutorial guides you through using Docker to deploy and install apps on a Dev store.
-- [Manual deployment guide](https://shopify.dev/docs/apps/launch/deployment/deploy-to-hosting-service): This resource provides general guidance on the requirements of deployment including environment variables, secrets, and persistent data.
-
-When you reach the step for [setting up environment variables](https://shopify.dev/docs/apps/deployment/web#set-env-vars), you also need to set the variable `NODE_ENV=production`.
-
-## Gotchas / Troubleshooting
-
-### Database tables don't exist
-
-If you get an error like:
-
-```
-The table `main.Session` does not exist in the current database.
-```
-
-Create the database for Prisma. Run the `setup` script in `package.json` using `npm`, `yarn` or `pnpm`.
-
-### Navigating/redirecting breaks an embedded app
-
-Embedded apps must maintain the user session, which can be tricky inside an iFrame. To avoid issues:
-
-1. Use `Link` from `react-router` or `@shopify/polaris`. Do not use `<a>`.
-2. Use `redirect` returned from `authenticate.admin`. Do not use `redirect` from `react-router`
-3. Use `useSubmit` from `react-router`.
-
-This only applies if your app is embedded, which it will be by default.
-
-### Webhooks: shop-specific webhook subscriptions aren't updated
-
-If you are registering webhooks in the `afterAuth` hook, using `shopify.registerWebhooks`, you may find that your subscriptions aren't being updated.
-
-Instead of using the `afterAuth` hook declare app-specific webhooks in the `shopify.app.toml` file. This approach is easier since Shopify will automatically sync changes every time you run `deploy` (e.g: `npm run deploy`). Please read these guides to understand more:
-
-1. [app-specific vs shop-specific webhooks](https://shopify.dev/docs/apps/build/webhooks/subscribe#app-specific-subscriptions)
-2. [Create a subscription tutorial](https://shopify.dev/docs/apps/build/webhooks/subscribe/get-started?deliveryMethod=https)
-
-If you do need shop-specific webhooks, keep in mind that the package calls `afterAuth` in 2 scenarios:
-
-- After installing the app
-- When an access token expires
-
-During normal development, the app won't need to re-authenticate most of the time, so shop-specific subscriptions aren't updated. To force your app to update the subscriptions, uninstall and reinstall the app. Revisiting the app will call the `afterAuth` hook.
-
-### Webhooks: Admin created webhook failing HMAC validation
-
-Webhooks subscriptions created in the [Shopify admin](https://help.shopify.com/en/manual/orders/notifications/webhooks) will fail HMAC validation. This is because the webhook payload is not signed with your app's secret key.
-
-The recommended solution is to use [app-specific webhooks](https://shopify.dev/docs/apps/build/webhooks/subscribe#app-specific-subscriptions) defined in your toml file instead. Test your webhooks by triggering events manually in the Shopify admin(e.g. Updating the product title to trigger a `PRODUCTS_UPDATE`).
-
-### Webhooks: Admin object undefined on webhook events triggered by the CLI
-
-When you trigger a webhook event using the Shopify CLI, the `admin` object will be `undefined`. This is because the CLI triggers an event with a valid, but non-existent, shop. The `admin` object is only available when the webhook is triggered by a shop that has installed the app. This is expected.
-
-Webhooks triggered by the CLI are intended for initial experimentation testing of your webhook configuration. For more information on how to test your webhooks, see the [Shopify CLI documentation](https://shopify.dev/docs/apps/tools/cli/commands#webhook-trigger).
-
-### Incorrect GraphQL Hints
-
-By default the [graphql.vscode-graphql](https://marketplace.visualstudio.com/items?itemName=GraphQL.vscode-graphql) extension for will assume that GraphQL queries or mutations are for the [Shopify Admin API](https://shopify.dev/docs/api/admin). This is a sensible default, but it may not be true if:
-
-1. You use another Shopify API such as the storefront API.
-2. You use a third party GraphQL API.
-
-If so, please update [.graphqlrc.ts](https://github.com/Shopify/shopify-app-template-react-router/blob/main/.graphqlrc.ts).
-
-### Using Defer & await for streaming responses
-
-By default the CLI uses a cloudflare tunnel. Unfortunately cloudflare tunnels wait for the Response stream to finish, then sends one chunk. This will not affect production.
-
-To test [streaming using await](https://reactrouter.com/api/components/Await#await) during local development we recommend [localhost based development](https://shopify.dev/docs/apps/build/cli-for-apps/networking-options#localhost-based-development).
-
-### "nbf" claim timestamp check failed
-
-This is because a JWT token is expired. If you are consistently getting this error, it could be that the clock on your machine is not in sync with the server. To fix this ensure you have enabled "Set time and date automatically" in the "Date and Time" settings on your computer.
-
-### Using MongoDB and Prisma
-
-If you choose to use MongoDB with Prisma, there are some gotchas in Prisma's MongoDB support to be aware of. Please see the [Prisma SessionStorage README](https://www.npmjs.com/package/@shopify/shopify-app-session-storage-prisma#mongodb).
-
-### Unable to require(`C:\...\query_engine-windows.dll.node`).
-
-Unable to require(`C:\...\query_engine-windows.dll.node`).
-The Prisma engines do not seem to be compatible with your system.
-
-query_engine-windows.dll.node is not a valid Win32 application.
-
-**Fix:** Set the environment variable:
-
-```shell
-PRISMA_CLIENT_ENGINE_TYPE=binary
-```
-
-This forces Prisma to use the binary engine mode, which runs the query engine as a separate process and can work via emulation on Windows ARM64.
-
-## Resources
-
-React Router:
-
-- [React Router docs](https://reactrouter.com/home)
-
-Shopify:
-
-- [Intro to Shopify apps](https://shopify.dev/docs/apps/getting-started)
-- [Shopify App React Router docs](https://shopify.dev/docs/api/shopify-app-react-router)
-- [Shopify CLI](https://shopify.dev/docs/apps/tools/cli)
-- [Shopify App Bridge](https://shopify.dev/docs/api/app-bridge-library).
-- [Polaris Web Components](https://shopify.dev/docs/api/app-home/polaris-web-components).
-- [App extensions](https://shopify.dev/docs/apps/app-extensions/list)
-- [Shopify Functions](https://shopify.dev/docs/api/functions)
-
-Internationalization:
-
-- [Internationalizing your app](https://shopify.dev/docs/apps/best-practices/internationalization/getting-started)

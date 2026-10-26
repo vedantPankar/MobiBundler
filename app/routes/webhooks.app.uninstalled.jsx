@@ -1,5 +1,6 @@
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
+import { bundleRepo } from "../bundles/index.server";
 
 export const action = async ({ request }) => {
   const { shop, session, topic } = await authenticate.webhook(request);
@@ -11,6 +12,9 @@ export const action = async ({ request }) => {
   if (session) {
     await db.session.deleteMany({ where: { shop } });
   }
+
+  // Idempotent purge of this shop's bundle data (deleteMany; safe on replays).
+  await bundleRepo.deleteAllForShop(shop);
 
   return new Response();
 };
